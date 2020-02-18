@@ -3,12 +3,6 @@ package main
 /*
 #cgo LDFLAGS: -luring
 #include <liburing.h>
-struct io_data {
-	int read;
-	off_t first_offset, offset;
-	size_t first_len;
-	struct iovec iov;
-};
 */
 import "C"
 import (
@@ -17,13 +11,20 @@ import (
 	"unsafe"
 )
 
+type IOData struct {
+	read                int
+	firstOffset, offset C.off_t
+	firstLen            C.size_t
+	iov                 C.struct_iovec
+}
+
 type Ring struct {
 	ring C.struct_io_uring
 }
 
 func (r *Ring) QueueRead(fd uintptr, size uint64, offset uint64) {
 
-	data := C.struct_io_data{}
+	data := IOData{}
 	sqe := C.io_uring_get_sqe(&r.ring)
 	if sqe == nil {
 		return
@@ -31,14 +32,14 @@ func (r *Ring) QueueRead(fd uintptr, size uint64, offset uint64) {
 
 	data.read = 1
 	data.offset = C.long(offset)
-	data.first_offset = C.long(offset)
-	data.first_len = C.ulong(size)
+	data.firstOffset = C.long(offset)
+	data.firstLen = C.ulong(size)
 
 	data.iov.iov_base = unsafe.Pointer(&data.read)
 	data.iov.iov_len = C.ulong(size)
 
 	C.io_uring_prep_readv(sqe, C.int(fd), &data.iov, 1, C.long(offset))
-	C.io_uring_sqe_set_data(sqe, unsafe.Pointer(&data))
+	C.io_uring_sqe_set_data(sqe, unsafe.Pointer(&data.iov))
 }
 
 func (r *Ring) Init() error {
