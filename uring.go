@@ -1,4 +1,4 @@
-package main
+package yourring
 
 /*
 #cgo LDFLAGS: -luring
@@ -7,7 +7,6 @@ package main
 import "C"
 import (
 	"fmt"
-	"os"
 	"unsafe"
 )
 
@@ -36,7 +35,7 @@ func (r *Ring) QueueRead(fd uintptr, size uint64, offset uint64) {
 
 	iov := (*C.struct_iovec)(C.malloc(C.size_t(unsafe.Sizeof(C.struct_iovec{}))))
 	if iov == nil {
-		panic("LOL")
+		panic("malloc nullptr")
 	}
 
 	iov.iov_base = unsafe.Pointer(&data.firstOffset)
@@ -46,18 +45,18 @@ func (r *Ring) QueueRead(fd uintptr, size uint64, offset uint64) {
 	C.io_uring_sqe_set_data(sqe, unsafe.Pointer(iov))
 	C.io_uring_submit(&r.ring)
 
-	// Something like this should be used: figure out how to do it.
-	// var cqe []C.struct_io_uring_cqe
-	// if C.io_uring_wait_cqe(&r.ring, &cqe) < 0 {
-	// 	panic("lolno")
-	// }
-
-	// just print the iovec to stdout, works because the iovec is
-	// what's populated by the actual io_yourring shit.
-	//
-	// the iovec sometimes has no data, because async - run it a few
-	// times.
-	C.writev(1, iov, 3)
+	cqe := C.struct_io_uring_cqe{}
+	cqes := (**C.struct_io_uring_cqe)(unsafe.Pointer(unsafe.Pointer(&cqe)))
+	if C.io_uring_wait_cqe(&r.ring, cqes) < 0 {
+		panic("cqe read")
+	}
+	cqePtr := (*C.struct_io_uring_cqe)(unsafe.Pointer(&cqe))
+	readData := (*C.struct_iovec)(C.io_uring_cqe_get_data(cqePtr))
+	if cqePtr.res < 0 {
+		panic("cqe res")
+	}
+	C.io_uring_cqe_seen(&r.ring, cqePtr)
+	fmt.Println(*(*C.char)(readData.iov_base))
 }
 
 func (r *Ring) Init() error {
@@ -65,14 +64,4 @@ func (r *Ring) Init() error {
 		return fmt.Errorf("cannot initialise ring: %d", ret)
 	}
 	return nil
-}
-
-func main() {
-	r := &Ring{}
-	fmt.Println(r.Init())
-	f, err := os.Open("/dev/urandom")
-	if err != nil {
-		fmt.Println(err)
-	}
-	r.QueueRead(f.Fd(), 1024, 0)
 }
